@@ -10,6 +10,7 @@ const loadError = computed(() => teams.error.value)
 </script>
 
 <template>
+  <!-- TODO(saya): 招待コードで参加する入力欄を追加（useCallables の joinTeam を呼び、teamName を表示してから移動） -->
   <div class="flex items-center justify-between">
     <h1 class="text-xl font-bold">チーム一覧</h1>
     <RouterLink

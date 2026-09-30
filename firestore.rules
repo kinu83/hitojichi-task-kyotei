@@ -1,6 +1,8 @@
 rules_version = '2';
 
 // ⚠ 初版です。Emulatorで検証しながら固めてください。
+// TODO(tsubaki): タスクの status をクライアントから 'overdue' にさせない
+//   （作成時は 'todo' のみ、更新は 'todo' → 'done' のみ許可する。'overdue' にするのは称号判定のFunctionsだけ）
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -23,7 +25,7 @@ service cloud.firestore {
     }
 
     // チーム：メンバーのみ閲覧・更新可
-    // TODO: 招待コードでの参加方法（Functions経由にするか）を決める
+    // 招待コードでの参加は Functions（joinTeam）経由。メンバー以外はチームを読めないため
     match /teams/{teamId} {
       // teams自身の読み取り/更新は、自己参照get()を避けてresource.dataを直接見る
       // （isMember()の自己get()は一覧取得(list)クエリの評価時にNull value errorになるため使わない）
@@ -44,6 +46,11 @@ service cloud.firestore {
         allow update: if isMember(teamId) && resource.data.ownerId == request.auth.uid
           && request.resource.data.ownerId == request.auth.uid;
         allow delete: if isMember(teamId) && resource.data.ownerId == request.auth.uid;
+      }
+
+      // 称号付与の記録：閲覧はチームメンバー全員、書き込みはFunctionsのみ
+      match /titleEvents/{eventId} {
+        allow read: if isMember(teamId);
       }
     }
 

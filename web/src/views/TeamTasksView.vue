@@ -116,6 +116,7 @@ async function onComplete(task: Task & { id: string }) {
 </script>
 
 <template>
+  <!-- TODO(saya): デモ用の「今すぐ判定」ボタン（useCallables の judgeOverdueTasks）と、称号付与・格上げ（previousTitleId）の演出 -->
   <h1 class="text-xl font-bold">タスク管理（{{ team?.name ?? '読み込み中…' }}）</h1>
 
   <section class="mt-4 max-w-md rounded border p-4">

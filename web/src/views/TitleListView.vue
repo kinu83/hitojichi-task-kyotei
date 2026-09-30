@@ -15,6 +15,7 @@ function isOwned(titleId: string) {
   return ownedTitleIds.value.has(titleId)
 }
 
+// TODO(saya): shameLevel は key が使うか決めるまで仮。これに頼った見た目は作り込まない
 const sortedTitles = computed(() => [...titles.value].sort((a, b) => b.shameLevel - a.shameLevel))
 </script>
 
@@ -45,12 +46,7 @@ const sortedTitles = computed(() => [...titles.value].sort((a, b) => b.shameLeve
         <p class="text-xs text-gray-500">{{ title.description }}</p>
       </div>
       <div class="flex items-center gap-0.5" :title="`不名誉度 ${title.shameLevel}`">
-        <Skull
-          v-for="i in title.shameLevel"
-          :key="i"
-          :size="14"
-          class="text-gray-500"
-        />
+        <Skull v-for="i in title.shameLevel" :key="i" :size="14" class="text-gray-500" />
       </div>
     </li>
   </ul>
