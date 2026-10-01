@@ -1,18 +1,24 @@
 <script setup lang="ts">
 import { computed, ref, useId } from 'vue'
 import { Check, ChevronRight, Shield, Skull, Trophy, X } from 'lucide-vue-next'
-import { isAchievementTitle } from '@hitojichi/shared'
 import { useTitles } from '@/composables/useTitles'
 import IconTile from '@/components/IconTile.vue'
 
 const selfDisTitleId = defineModel<string>('selfDisTitleId', { required: true })
 const teamDisTitleId = defineModel<string>('teamDisTitleId', { required: true })
 const { titles: allTitles } = useTitles()
-// 人質に選べるのはdis称号だけ（実績の称号は除く）
-const titles = computed(() => allTitles.value.filter((title) => !isAchievementTitle(title)))
+// 未分類の旧マスタも候補に混ぜず、付与される側が明確な称号だけを選ぶ。
+const selfTitles = computed(() => allTitles.value.filter((title) => title.kind === 'self'))
+const teamTitles = computed(() => allTitles.value.filter((title) => title.kind === 'team'))
+const selectedSelfTitle = computed(() =>
+  selfTitles.value.find((title) => title.id === selfDisTitleId.value),
+)
+const recommendedIds = computed(() => selectedSelfTitle.value?.recommendedTeamTitleIds ?? [])
 const dialog = ref<HTMLDialogElement | null>(null)
 const dialogHeadingId = useId()
 const activeField = ref<'self' | 'team'>('self')
+// dis称号を選び直してもカードの位置を変えず、おすすめはバッジだけで示す。
+const titles = computed(() => (activeField.value === 'self' ? selfTitles.value : teamTitles.value))
 const selectedId = computed(() =>
   activeField.value === 'self' ? selfDisTitleId.value : teamDisTitleId.value,
 )
@@ -24,14 +30,14 @@ const fields = computed(() => [
     label: 'dis称号',
     recipient: 'サボった本人に付く',
     icon: Skull,
-    title: titles.value.find((title) => title.id === selfDisTitleId.value),
+    title: selectedSelfTitle.value,
   },
   {
     key: 'team' as const,
     label: 'team dis称号',
     recipient: 'サボった人の仲間に付く',
     icon: Shield,
-    title: titles.value.find((title) => title.id === teamDisTitleId.value),
+    title: teamTitles.value.find((title) => title.id === teamDisTitleId.value),
   },
 ])
 
@@ -42,6 +48,7 @@ function openPicker(field: 'self' | 'team') {
 }
 
 function selectTitle(id: string) {
+  // 各称号を独立して選べるよう、選んだ項目だけを確定してモーダルを閉じる。
   if (activeField.value === 'self') selfDisTitleId.value = id
   else teamDisTitleId.value = id
   dialog.value?.close()
@@ -111,7 +118,19 @@ function selectTitle(id: string) {
             <X :size="20" aria-hidden="true" />
           </button>
         </div>
-        <p class="mt-3 text-sm text-ink/70">付けたい称号を選んでください。</p>
+        <p class="mt-3 text-sm text-ink/70">
+          {{
+            activeField === 'self'
+              ? 'サボった本人に付く称号を選んでください。'
+              : '巻き添えになった仲間に付く称号を選んでください。'
+          }}
+        </p>
+        <p
+          v-if="activeField === 'team' && selectedSelfTitle"
+          class="mt-2 text-sm font-bold text-primary"
+        >
+          「{{ selectedSelfTitle.name }}」と組み合わせるteam dis称号
+        </p>
         <p v-if="isPending" role="status" class="mt-5 text-sm text-ink/60">読み込み中…</p>
         <p v-else-if="loadError" role="alert" class="mt-5 text-sm font-bold text-red-600">
           称号の取得に失敗しました。
@@ -133,6 +152,12 @@ function selectTitle(id: string) {
           >
             <span class="flex items-center justify-between gap-2">
               <IconTile :icon="Trophy" tone="muted" />
+              <span
+                v-if="activeField === 'team' && recommendedIds.includes(title.id)"
+                class="rounded-full bg-accent px-2 py-1 text-xs font-bold text-ink"
+              >
+                おすすめ
+              </span>
               <span
                 v-if="selectedId === title.id"
                 class="flex items-center gap-1 rounded-full bg-primary px-2 py-1 text-xs font-bold text-white"

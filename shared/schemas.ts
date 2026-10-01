@@ -47,16 +47,18 @@ export const taskSchema = z.object({
 export type Task = z.infer<typeof taskSchema>
 
 /** titles/{titleId}（称号マスタ） */
-export const titleKindSchema = z.enum(['achievement', 'dis'])
+export const titleKindSchema = z.enum(['achievement', 'self', 'team'])
 export const titleSchema = z.object({
   name: z.string(),
   description: z.string(),
-  kind: titleKindSchema.optional(), // 実績 or dis称号。未設定の既存称号はdis称号として扱う
+  // 未分類の称号を本人・仲間の両方に使わないため、マスタ投入時に種類を必須にする。
+  kind: titleKindSchema,
+  recommendedTeamTitleIds: z.array(z.string().min(1)).optional(), // 本人用のみ：相性のよい仲間用称号のID
   requiredDoneCount: z.number().int().positive().optional(), // 実績のみ：獲得に必要な完了タスク数
 })
 export type Title = z.infer<typeof titleSchema>
 
-/** 実績の称号か（dis称号でないか）。kind未設定の既存称号はdis称号 */
+/** 実績の称号か（本人用・仲間用のdis称号を除く） */
 export function isAchievementTitle(title: Pick<Title, 'kind'>) {
   return title.kind === 'achievement'
 }

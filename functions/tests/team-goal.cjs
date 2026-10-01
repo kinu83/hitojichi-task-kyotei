@@ -34,6 +34,13 @@ async function main() {
   const app = initializeApp({ projectId, apiKey: 'demo-key' }, 'team-goal')
   const admin = initializeAdmin({ projectId }, 'team-goal-admin')
   try {
+    // チーム作成時の称号種別チェックに必要なマスタを用意し、目標の検証と分離する。
+    const titles = getAdminFirestore(admin).collection('titles')
+    await Promise.all([
+      titles.doc('self').set({ kind: 'self' }),
+      titles.doc('team').set({ kind: 'team' }),
+      titles.doc('changed').set({ kind: 'self' }),
+    ])
     const auth = getAuth(app)
     connectAuthEmulator(auth, `http://${process.env.FIREBASE_AUTH_EMULATOR_HOST}`, {
       disableWarnings: true,
