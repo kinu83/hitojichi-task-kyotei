@@ -10,6 +10,7 @@ import {
 import { computed, toValue, type MaybeRefOrGetter } from 'vue'
 import { useCollection, useCurrentUser, useDocument } from 'vuefire'
 import { db } from '@/lib/firebase'
+import { deleteAllTaskProofs } from '@/composables/useTaskProofs'
 import {
   taskSchema,
   updateTaskInput,
@@ -98,6 +99,8 @@ export function useTeamTasks(teamId: MaybeRefOrGetter<string>) {
     const uid = currentUser.value?.uid
     if (!uid) throw new Error('ログインが必要です')
     const taskRef = doc(db, 'teams', toValue(teamId), 'tasks', taskId)
+    // 証明はタスクの持ち主かどうかをルールで確かめるので、タスクより先に消す（自動では消えない）
+    await deleteAllTaskProofs(toValue(teamId), taskId)
     await runTransaction(db, async (transaction) => {
       const snapshot = await transaction.get(taskRef)
       if (!snapshot.exists()) throw new Error('タスクが見つかりません')
