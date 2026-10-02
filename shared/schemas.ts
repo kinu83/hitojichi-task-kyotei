@@ -46,6 +46,26 @@ export const taskSchema = z.object({
 })
 export type Task = z.infer<typeof taskSchema>
 
+/**
+ * teams/{teamId}/tasks/{taskId}/proofs/{proofId}（タスクをやった証明。ファイル本体はStorageの同じパスに置く）
+ * 上限・種類は storage.rules / firestore.rules と揃えること。
+ */
+export const MAX_PROOF_FILE_SIZE = 10 * 1024 * 1024 // 10MB
+export const MAX_PROOF_NOTE_LENGTH = 100
+export function isAllowedProofContentType(contentType: string) {
+  return /^image\/.+$/.test(contentType) || contentType === 'application/pdf'
+}
+export const proofSchema = z.object({
+  uploaderId: z.string().min(1), // タスクの持ち主本人
+  storagePath: z.string().min(1),
+  fileName: z.string().min(1).max(200),
+  contentType: z.string().refine(isAllowedProofContentType),
+  size: z.number().int().positive().max(MAX_PROOF_FILE_SIZE),
+  note: z.string().max(MAX_PROOF_NOTE_LENGTH).optional(), // ひとこと（任意）
+  createdAt: z.date(),
+})
+export type Proof = z.infer<typeof proofSchema>
+
 /** titles/{titleId}（称号マスタ） */
 export const titleKindSchema = z.enum(['achievement', 'self', 'team'])
 export const titleSchema = z.object({
@@ -83,6 +103,10 @@ export const createTaskInput = taskSchema.pick({ title: true, dueAt: true })
 export type CreateTaskInput = z.infer<typeof createTaskInput>
 export const updateTaskInput = taskSchema.pick({ title: true, dueAt: true })
 export type UpdateTaskInput = z.infer<typeof updateTaskInput>
+export const createProofInput = z.object({
+  note: z.string().trim().max(MAX_PROOF_NOTE_LENGTH).optional(),
+})
+export type CreateProofInput = z.infer<typeof createProofInput>
 export const joinTeamInput = z.object({ inviteCode: z.string().trim().min(1).max(128) })
 export type JoinTeamInput = z.infer<typeof joinTeamInput>
 export type JoinTeamResult = { teamId: string; teamName: string } // 参加後の画面でチーム名を表示する

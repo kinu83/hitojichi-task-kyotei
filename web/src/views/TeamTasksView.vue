@@ -29,6 +29,7 @@ import { useTitles } from '@/composables/useTitles'
 import { useOverdueCheck } from '@/composables/useOverdueCheck'
 import HostageTitleFields from '@/components/HostageTitleFields.vue'
 import IconTile from '@/components/IconTile.vue'
+import TaskProofs from '@/components/TaskProofs.vue'
 
 const props = defineProps<{ teamId: string }>()
 
@@ -636,6 +637,14 @@ async function onComplete(task: Task & { id: string }) {
                         : statusLabel[task.status]
                   }}</span
                 >
+                <!-- 証明（写真・PDF）。完了とは独立していて、証明が無くても完了できる -->
+                <TaskProofs
+                  v-if="editingTaskId !== task.id"
+                  :team-id="teamId"
+                  :task-id="task.id"
+                  :task-title="task.title"
+                  :is-owner="task.ownerId === currentUser?.uid"
+                />
                 <div v-if="task.ownerId === currentUser?.uid" class="task-actions">
                   <div v-if="editingTaskId === task.id" class="flex flex-wrap gap-2">
                     <button type="submit" :form="`edit-task-${task.id}`" :disabled="!!busyTaskId">

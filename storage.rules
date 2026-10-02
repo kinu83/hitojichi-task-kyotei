@@ -1,0 +1,29 @@
+rules_version = '2';
+
+// 証明ファイル（タスクをやった証明の写真・PDF）
+// メタデータは Firestore の teams/{teamId}/tasks/{taskId}/proofs/{proofId} に保存する。
+// 上限・種類は firestore.rules と shared/schemas.ts の MAX_PROOF_FILE_SIZE に揃えること。
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isMember(teamId) {
+      return request.auth != null
+        && request.auth.uid in firestore.get(/databases/(default)/documents/teams/$(teamId)).data.memberIds;
+    }
+
+    function isTaskOwner(teamId, taskId) {
+      return request.auth != null
+        && firestore.get(/databases/(default)/documents/teams/$(teamId)/tasks/$(taskId)).data.ownerId
+          == request.auth.uid;
+    }
+
+    match /teams/{teamId}/tasks/{taskId}/proofs/{proofId} {
+      allow read: if isMember(teamId);
+      // 上書きはさせない（証明の差し替えは削除してから追加する）
+      allow create: if resource == null && isMember(teamId) && isTaskOwner(teamId, taskId)
+        && request.resource.size <= 10 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.+')
+          || request.resource.contentType == 'application/pdf');
+      allow delete: if isMember(teamId) && isTaskOwner(teamId, taskId);
+    }
+  }
+}
