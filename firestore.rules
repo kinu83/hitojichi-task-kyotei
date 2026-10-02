@@ -93,14 +93,18 @@ service cloud.firestore {
           && validStatusChange();
         allow delete: if isMember(teamId) && resource.data.ownerId == request.auth.uid;
 
+        function isTaskOwner() {
+          return get(/databases/$(database)/documents/teams/$(teamId)/tasks/$(taskId)).data.ownerId
+            == request.auth.uid;
+        }
+
+        function taskExists() {
+          return exists(/databases/$(database)/documents/teams/$(teamId)/tasks/$(taskId));
+        }
+
         // 証明：閲覧はチームメンバー全員、追加・削除はタスクの持ち主のみ。
         // ファイル本体はStorageの同じパスに置く（storage.rulesと上限・種類を揃える）
         match /proofs/{proofId} {
-          function isTaskOwner() {
-            return get(/databases/$(database)/documents/teams/$(teamId)/tasks/$(taskId)).data.ownerId
-              == request.auth.uid;
-          }
-
           function validProof(data) {
             return data.keys().hasOnly(['uploaderId', 'storagePath', 'fileName', 'contentType', 'size', 'note', 'createdAt'])
               && data.uploaderId == request.auth.uid
@@ -116,6 +120,34 @@ service cloud.firestore {
           allow read: if isMember(teamId);
           allow create: if isMember(teamId) && isTaskOwner() && validProof(request.resource.data);
           allow delete: if isMember(teamId) && isTaskOwner();
+        }
+
+        // リアクション：メンバー全員が付けられる。IDを「uid_種類」に固定して重複を防ぐ
+        // 削除は付けた本人と、タスク削除時に後片付けするタスクの持ち主
+        match /reactions/{reactionId} {
+          allow read: if isMember(teamId);
+          allow create: if isMember(teamId) && taskExists()
+            && request.resource.data.keys().hasOnly(['userId', 'type', 'createdAt'])
+            && request.resource.data.userId == request.auth.uid
+            && request.resource.data.type in ['cheer', 'great', 'doubt', 'hurry']
+            && reactionId == request.auth.uid + '_' + request.resource.data.type
+            && request.resource.data.createdAt == request.time;
+          allow delete: if isMember(teamId)
+            && (resource.data.userId == request.auth.uid || isTaskOwner());
+        }
+
+        // コメント：メンバー全員が書ける。編集は不可。削除は書いた本人とタスクの持ち主
+        match /comments/{commentId} {
+          allow read: if isMember(teamId);
+          allow create: if isMember(teamId) && taskExists()
+            && request.resource.data.keys().hasOnly(['authorId', 'text', 'createdAt'])
+            && request.resource.data.authorId == request.auth.uid
+            && request.resource.data.text is string
+            && request.resource.data.text.size() <= 200
+            && request.resource.data.text.matches('[\\s\\S]*[^\\s　][\\s\\S]*')
+            && request.resource.data.createdAt == request.time;
+          allow delete: if isMember(teamId)
+            && (resource.data.authorId == request.auth.uid || isTaskOwner());
         }
       }
     }
