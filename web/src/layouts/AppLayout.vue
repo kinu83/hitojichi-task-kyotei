@@ -33,7 +33,7 @@ async function logout() {
 
 <template>
   <div class="min-h-dvh">
-    <header v-if="showNav" class="border-b-4 border-accent bg-ink/60">
+    <header v-if="showNav" class="border-b-4 border-accent bg-ink">
       <div class="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <RouterLink
           to="/"
