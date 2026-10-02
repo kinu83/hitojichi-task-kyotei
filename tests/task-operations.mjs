@@ -268,9 +268,12 @@ try {
       assert.equal(/<li class="[^"]*\bis-late\b/.test(html), late)
       const done = tasks.value[0].status === 'done'
       assert.equal(/<li class="[^"]*\bis-done\b/.test(html), done)
+      // 完了・未完了はタスク名の左のチェックボックスで切り替える
       assert.match(
         html,
-        new RegExp(`class="task-status-action"[^>]*>.*${done ? '未完了に戻す' : '完了'}`, 's'),
+        new RegExp(
+          `role="checkbox"[^>]*aria-checked="${done}"[^>]*aria-label="${done ? '未完了に戻す' : '完了にする'}"`,
+        ),
       )
       assert.match(html, /aria-label="編集"/)
       assert.match(html, /aria-label="削除"/)
@@ -278,8 +281,7 @@ try {
         html,
         /class="task-header-actions"[^>]*>.*aria-label="編集".*aria-label="削除".*class="task-due/s,
       )
-      assert.ok(html.indexOf('aria-label="編集"') < html.indexOf('task-status-action'))
-      assert.ok(html.indexOf('aria-label="削除"') < html.indexOf('task-status-action'))
+      assert.ok(html.indexOf('role="checkbox"') < html.indexOf('aria-label="編集"'))
     })
   }
   await check('全状態で編集中は状態ボタンを隠し、保存・キャンセル後に再表示', async () => {
@@ -351,12 +353,12 @@ try {
       for (const status of ['todo', 'done', 'overdue']) {
         await reset({ status, dueAt: past })
         await sync()
-        const label = status === 'done' ? '未完了に戻す' : '完了'
+        const label = status === 'done' ? '未完了に戻す' : '完了にする'
         for (const finish of ['キャンセル', '保存']) {
           assert.ok(button(label))
           button('編集').props.onClick()
           await nextTick()
-          assert.equal(button('完了'), undefined)
+          assert.equal(button('完了にする'), undefined)
           assert.equal(button('未完了に戻す'), undefined)
           assert.ok(button('保存'))
           assert.ok(button('キャンセル'))
@@ -377,8 +379,7 @@ try {
           assert.ok(button('削除'))
           assert.equal(button('編集').parent.props.class, 'task-header-actions')
           assert.equal(button('削除').parent, button('編集').parent)
-          assert.equal(button(label).parent.props.class, 'task-actions')
-          assert.equal(button(label).parent.children.at(-1), button(label))
+          assert.match(button(label).parent.props.class, /\btask-name\b/)
         }
       }
     } finally {
