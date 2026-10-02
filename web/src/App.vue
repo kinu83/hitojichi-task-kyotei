@@ -3,6 +3,7 @@ import { watch } from 'vue'
 import { RouterView } from 'vue-router'
 import { useCurrentUser } from 'vuefire'
 import AppLayout from '@/layouts/AppLayout.vue'
+import PwaStatus from '@/components/PwaStatus.vue'
 import { ensureUserProfile } from '@/composables/useEnsureUserProfile'
 
 const currentUser = useCurrentUser()
@@ -18,6 +19,7 @@ watch(
 </script>
 
 <template>
+  <PwaStatus />
   <AppLayout>
     <RouterView />
   </AppLayout>
