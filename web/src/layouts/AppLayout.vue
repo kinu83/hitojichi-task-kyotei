@@ -7,6 +7,7 @@ import { auth } from '@/lib/firebase'
 import { useTeams } from '@/composables/useTeams'
 import { useCurrentUserProfile } from '@/composables/useCurrentUserProfile'
 import { useCompletedTaskCount } from '@/composables/useCompletedTaskCount'
+import BackgroundDots from '@/components/BackgroundDots.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -33,7 +34,9 @@ async function logout() {
 
 <template>
   <div class="min-h-dvh">
-    <header v-if="showNav" class="border-b-4 border-accent bg-ink/60">
+    <!-- 画面に固定した背景の飾り（ランダムな円形ドット） -->
+    <BackgroundDots />
+    <header v-if="showNav" class="border-b-4 border-accent bg-ink">
       <div class="flex items-center justify-between gap-4 px-4 py-3 sm:px-6">
         <RouterLink
           to="/"

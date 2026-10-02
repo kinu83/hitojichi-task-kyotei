@@ -5,15 +5,17 @@ import { Timestamp } from 'firebase/firestore'
 import { useCurrentUser } from 'vuefire'
 import {
   Check,
+  Clock,
   Copy,
-  KeyRound,
+  Flame,
+  Info,
   Pencil,
   Plus,
-  Trash2,
-  Swords,
   Skull,
+  Swords,
+  Trash2,
+  TriangleAlert,
   Users,
-  Clock,
 } from 'lucide-vue-next'
 import {
   createTaskInput,
@@ -28,7 +30,6 @@ import { useTeamMembers } from '@/composables/useTeamMembers'
 import { useTitles } from '@/composables/useTitles'
 import { useOverdueCheck } from '@/composables/useOverdueCheck'
 import HostageTitleFields from '@/components/HostageTitleFields.vue'
-import IconTile from '@/components/IconTile.vue'
 import TaskProofs from '@/components/TaskProofs.vue'
 import TaskFeedback from '@/components/TaskFeedback.vue'
 
@@ -67,23 +68,30 @@ const canInvite = computed(
     !!team.value?.inviteCode &&
     team.value.memberIds.length < MAX_TEAM_MEMBERS,
 )
-const copyMessage = ref('')
+// コピーできたら少しの間アイコンをチェックに変える。失敗時だけ文章で案内する
+const isCopied = ref(false)
+const copyError = ref('')
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
 
 async function copyInviteCode() {
   const code = team.value?.inviteCode
   if (!canInvite.value || !code) return
   const teamId = props.teamId
-  copyMessage.value = ''
+  copyError.value = ''
   try {
     // 標準のClipboard APIを使い、失敗時は手動コピーできる案内を表示する。
     await navigator.clipboard.writeText(code)
-    if (props.teamId === teamId) copyMessage.value = 'コピーしました'
+    if (props.teamId !== teamId) return
+    isCopied.value = true
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => (isCopied.value = false), 2000)
   } catch (error) {
     console.error(error)
     if (props.teamId === teamId)
-      copyMessage.value = 'コピーできませんでした。招待コードを選択してコピーしてください。'
+      copyError.value = 'コピーできませんでした。招待コードを選択してコピーしてください。'
   }
 }
+onUnmounted(() => clearTimeout(copiedTimer))
 
 const activeFilter = ref<'all' | 'unfinished' | 'done'>('all')
 const filters = [
@@ -95,12 +103,15 @@ const isCreatingTask = ref(false)
 const now = ref(Date.now())
 const completedCount = computed(() => tasks.value.filter((task) => task.status === 'done').length)
 const overdueCount = computed(() => tasks.value.filter(isDisplayOverdue).length)
-const nearestDueAt = computed(() => {
-  const dates = tasks.value
-    .filter((task) => task.status === 'todo')
-    .map((task) => (task.dueAt instanceof Timestamp ? task.dueAt.toDate() : task.dueAt))
-  return dates.length ? new Date(Math.min(...dates.map((date) => date.getTime()))) : null
-})
+// 人質の称号の発動中表示は、見ている人の立場で分ける（useActiveDisTitlesと同じ考え方）
+// 自分のタスクが期限切れ → 自分に付く「本人」の称号が発動中
+const isSelfDisTitleActive = computed(() =>
+  tasks.value.some((task) => task.ownerId === currentUser.value?.uid && isDisplayOverdue(task)),
+)
+// 仲間のタスクが期限切れ → 人質の自分に付く「仲間」の称号が発動中
+const isTeamDisTitleActive = computed(() =>
+  tasks.value.some((task) => task.ownerId !== currentUser.value?.uid && isDisplayOverdue(task)),
+)
 // 所属情報にない所有者のタスクも落とさず表示する。
 const memberCards = computed(() => {
   const ids = [
@@ -137,6 +148,10 @@ function titleName(titleId: string | undefined) {
   return titles.value.find((title) => title.id === titleId)?.name ?? '(未設定)'
 }
 
+function titleDescription(titleId: string | undefined) {
+  return titles.value.find((title) => title.id === titleId)?.description
+}
+
 // FirestoreのTimestampがそのまま返ってくる場合があるため、表示前にDateへ揃える
 function formatDueAt(dueAt: Task['dueAt']) {
   const date = dueAt instanceof Timestamp ? dueAt.toDate() : dueAt
@@ -158,6 +173,15 @@ const statusLabel: Record<(typeof taskStatusSchema)['options'][number], string> 
   done: '完了',
   overdue: '期限切れ',
 }
+
+// --- 人質の説明（ⓘ）：PCはカーソルを合わせると出る。スマホはタップで開閉し、外側をタップで閉じる ---
+const isHostageInfoOpen = ref(false)
+const hostageInfo = ref<HTMLElement | null>(null)
+function closeHostageInfoOnOutside(event: PointerEvent) {
+  if (!hostageInfo.value?.contains(event.target as Node)) isHostageInfoOpen.value = false
+}
+onMounted(() => document.addEventListener('pointerdown', closeHostageInfoOnOutside))
+onUnmounted(() => document.removeEventListener('pointerdown', closeHostageInfoOnOutside))
 
 // --- 人質（称号の組）の変更：作成者のみ ---
 const isEditingHostage = ref(false)
@@ -245,13 +269,16 @@ async function submit() {
 const editingTaskId = ref<string | null>(null)
 const editTitle = ref('')
 const editDueAt = ref('')
+// 編集開始時の期限。入力欄は分単位なので、期限に触れずに保存したときは秒以下も元のまま残す
+let editOriginalDueAt: { text: string; date: Date } | null = null
 const busyTaskId = ref<string | null>(null)
 const taskErrorMessage = ref('')
 
 watch(
   () => props.teamId,
   () => {
-    copyMessage.value = ''
+    isCopied.value = false
+    copyError.value = ''
     editingTaskId.value = null
     taskErrorMessage.value = ''
     activeFilter.value = 'all'
@@ -265,9 +292,10 @@ watch(
 
 function startEditTask(task: Task & { id: string }) {
   const date = task.dueAt instanceof Timestamp ? task.dueAt.toDate() : task.dueAt
-  // datetime-localにはUTCではなくローカル時刻を渡す。
+  // datetime-localにはUTCではなくローカル時刻を渡す。分単位で選べるよう、秒以下は表示しない
   const pad = (value: number) => String(value).padStart(2, '0')
-  editDueAt.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}:${pad(date.getSeconds())}.${String(date.getMilliseconds()).padStart(3, '0')}`
+  editDueAt.value = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+  editOriginalDueAt = { text: editDueAt.value, date }
   editTitle.value = task.title
   editingTaskId.value = task.id
   taskErrorMessage.value = ''
@@ -278,7 +306,11 @@ async function saveTask(taskId: string) {
   taskErrorMessage.value = ''
   const parsed = updateTaskInput.safeParse({
     title: editTitle.value,
-    dueAt: editDueAt.value ? new Date(editDueAt.value) : undefined,
+    dueAt: !editDueAt.value
+      ? undefined
+      : editDueAt.value === editOriginalDueAt?.text
+        ? editOriginalDueAt.date
+        : new Date(editDueAt.value),
   })
   if (!parsed.success) {
     taskErrorMessage.value = 'タスク名（1〜100文字）と有効な期限を入力してください。'
@@ -358,10 +390,35 @@ async function onComplete(task: Task & { id: string }) {
           <p class="mb-3 w-fit rounded bg-ink px-3 py-1 font-dot text-xs text-accent">
             TEAM QUEST / BATTLE
           </p>
-          <h1 class="flex items-center gap-3 font-display text-2xl sm:text-3xl">
-            <span class="heading-icon"><Swords :size="26" /></span>
-            <span class="min-w-0 break-words">{{ team?.name ?? '読み込み中…' }}</span>
-          </h1>
+          <!-- 招待コードは目立たせず、チーム名のおまけとして名前の右に置く（見出しには含めない） -->
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <h1 class="flex min-w-0 items-center gap-3 font-display text-2xl sm:text-3xl">
+              <span class="heading-icon"><Swords :size="26" /></span>
+              <span class="min-w-0 break-words">{{ team?.name ?? '読み込み中…' }}</span>
+            </h1>
+            <p v-if="canInvite" class="invite-chip">
+              <span class="sr-only">招待コード</span>
+              <code class="font-dot tracking-widest break-all select-all">{{
+                team?.inviteCode
+              }}</code>
+              <button
+                type="button"
+                class="invite-copy"
+                :aria-label="isCopied ? 'コピーしました' : '招待コードをコピー'"
+                :title="isCopied ? 'コピーしました' : '招待コードをコピー'"
+                @click="copyInviteCode"
+              >
+                <Check v-if="isCopied" :size="14" :stroke-width="3" aria-hidden="true" />
+                <Copy v-else :size="14" aria-hidden="true" />
+              </button>
+            </p>
+          </div>
+          <p v-if="canInvite" class="sr-only" role="status">
+            {{ isCopied ? 'コピーしました' : '' }}
+          </p>
+          <p v-if="copyError" role="alert" class="mt-2 text-xs text-red-600">
+            {{ copyError }}
+          </p>
           <p
             v-if="team?.description"
             class="mt-3 whitespace-pre-wrap break-words text-sm text-ink/70"
@@ -369,12 +426,15 @@ async function onComplete(task: Task & { id: string }) {
             {{ team.description }}
           </p>
         </div>
-        <aside v-if="nearestDueAt && !isTasksPending" class="deadline-card" aria-label="目標の期限">
+        <!-- チーム作成時に決めた目標と期限。日付のみなのでDateに変換せず、チーム一覧と同じ表記にする -->
+        <aside v-if="team?.goalDueDate" class="deadline-card" aria-label="目標の期限">
           <p class="text-xs text-white">目標の期限</p>
           <p class="mt-2 flex items-center justify-center gap-2 font-dot text-lg">
-            <Clock :size="20" />{{ formatDueAt(nearestDueAt) }}
+            <Clock :size="20" aria-hidden="true" />{{ team.goalDueDate.replaceAll('-', '/') }}
           </p>
-          <p class="mt-1 text-xs text-white">未完了todoの最短期限</p>
+          <p v-if="team.goal" class="mt-1 max-w-56 text-xs break-words text-white">
+            {{ team.goal }}
+          </p>
         </aside>
       </div>
     </header>
@@ -384,96 +444,116 @@ async function onComplete(task: Task & { id: string }) {
     <p v-else-if="!isTeamPending && !team" role="status" class="task-panel">
       チームが見つかりません。チーム一覧から選び直してください。
     </p>
-    <section v-if="canInvite" class="task-panel" aria-label="チームの招待">
-      <div class="flex flex-wrap items-center justify-between gap-4">
-        <div class="min-w-0">
-          <h2 class="flex items-center gap-3 font-display text-sm">
-            <!-- 共通の見出しと同じ部品で、アイコンの太枠と影を揃える。 -->
-            <IconTile :icon="KeyRound" tone="accent" />招待コード
-          </h2>
-          <p class="mt-2">
-            <code class="font-dot text-xl break-all tracking-widest select-all">{{
-              team?.inviteCode
-            }}</code>
+    <!-- 人質は1行のバナーにまとめる。説明はⓘに、変更は作成者だけに✏️で出す -->
+    <section v-if="team" class="hostage-panel task-panel" aria-labelledby="hostage-heading">
+      <div class="hostage-bar">
+        <h2 id="hostage-heading" class="hostage-label">
+          <Skull :size="18" aria-hidden="true" />人質
+        </h2>
+        <!-- 自分の期限切れなら「本人」、仲間の期限切れなら「仲間」の称号を「発動中」の見た目にする -->
+        <dl v-if="!isEditingHostage" class="hostage-chips">
+          <div
+            class="hostage-chip"
+            :class="{ 'is-active': isSelfDisTitleActive }"
+            :title="titleDescription(team.selfDisTitleId)"
+          >
+            <dt>本人</dt>
+            <dd>
+              <Flame
+                v-if="isSelfDisTitleActive"
+                :size="14"
+                class="active-mark"
+                aria-hidden="true"
+              />
+              {{ titleName(team.selfDisTitleId) }}
+              <span v-if="isSelfDisTitleActive" class="sr-only">（発動中）</span>
+            </dd>
+          </div>
+          <div
+            class="hostage-chip"
+            :class="{ 'is-active': isTeamDisTitleActive }"
+            :title="titleDescription(team.teamDisTitleId)"
+          >
+            <dt>仲間</dt>
+            <dd>
+              <Flame
+                v-if="isTeamDisTitleActive"
+                :size="14"
+                class="active-mark"
+                aria-hidden="true"
+              />
+              {{ titleName(team.teamDisTitleId) }}
+              <span v-if="isTeamDisTitleActive" class="sr-only">（発動中）</span>
+            </dd>
+          </div>
+        </dl>
+        <div class="hostage-actions">
+          <p v-if="overdueCount" class="overdue-chip">
+            <TriangleAlert :size="14" aria-hidden="true" />期限切れ {{ overdueCount }}件
           </p>
-          <p class="mt-2 text-xs text-ink/70">
-            {{ team?.memberIds.length }} / {{ MAX_TEAM_MEMBERS }}人参加中　仲間を招待しよう！
-          </p>
-        </div>
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm"
-          @click="copyInviteCode"
-        >
-          <Copy :size="18" aria-hidden="true" />招待コードをコピー
-        </button>
-      </div>
-      <p v-if="copyMessage" role="status" class="mt-3 text-sm font-bold text-primary">
-        {{ copyMessage }}
-      </p>
-    </section>
-    <section v-if="team" class="hostage-panel task-panel" aria-label="このチームの人質">
-      <div class="flex flex-wrap items-center gap-3">
-        <span class="hostage-icon" aria-hidden="true"><Skull :size="22" /></span>
-        <div class="min-w-0 flex-1">
-          <h2 class="font-display text-sm">このチームの人質</h2>
-          <p class="mt-1 text-xs font-normal text-ink/75">
-            タスクをサボると、本人と仲間に称号が付与されます。
-          </p>
-          <p v-if="overdueCount" class="mt-1 text-sm font-bold">
-            期限切れのタスクが {{ overdueCount }} 件あります。
-          </p>
-          <div v-if="canRunOverdueCheck" class="mt-2 flex flex-wrap items-center gap-2">
+          <div ref="hostageInfo" class="hostage-info">
             <button
               type="button"
-              class="flex items-center gap-1 px-3 py-1 text-xs"
-              :disabled="isRunningOverdueCheck"
-              @click="runOverdueCheck"
+              class="hostage-icon-button"
+              aria-label="人質のしくみ"
+              aria-describedby="hostage-info-text"
+              :aria-expanded="isHostageInfoOpen"
+              @click="isHostageInfoOpen = !isHostageInfoOpen"
             >
-              <Clock :size="14" aria-hidden="true" />
-              {{ isRunningOverdueCheck ? '判定中…' : '期限切れを判定（開発用）' }}
+              <Info :size="16" aria-hidden="true" />
             </button>
-            <p v-if="overdueCheckError" role="alert" class="text-xs font-bold text-red-600">
-              {{ overdueCheckError }}
+            <p
+              id="hostage-info-text"
+              role="tooltip"
+              class="hostage-tooltip"
+              :class="{ 'is-open': isHostageInfoOpen }"
+            >
+              タスクをサボると、あなたは「{{ titleName(team.selfDisTitleId) }}」、仲間は「{{
+                titleName(team.teamDisTitleId)
+              }}」の称号を付けられます。
             </p>
           </div>
+          <button
+            v-if="isCreator && !isEditingHostage"
+            type="button"
+            class="hostage-icon-button"
+            aria-label="人質を変更"
+            title="人質を変更"
+            @click="startEditHostage"
+          >
+            <Pencil :size="16" aria-hidden="true" />
+          </button>
         </div>
-        <button
-          v-if="isCreator && !isEditingHostage"
-          class="flex items-center gap-1 px-3 py-1 text-sm"
-          @click="startEditHostage"
-        >
-          <Pencil :size="14" />変更
-        </button>
       </div>
-      <div class="hostage-details">
-        <template v-if="isEditingHostage">
-          <HostageTitleFields
-            v-model:self-dis-title-id="editSelfDisTitleId"
-            v-model:team-dis-title-id="editTeamDisTitleId"
-          />
-          <p v-if="hostageErrorMessage" class="text-sm text-red-600">{{ hostageErrorMessage }}</p>
-          <div class="flex gap-2">
-            <button class="rounded border px-3 py-1.5 text-sm font-bold" @click="saveHostage">
-              保存
-            </button>
-            <button class="rounded border px-3 py-1.5 text-sm" @click="isEditingHostage = false">
-              キャンセル
-            </button>
-          </div>
-        </template>
-        <template v-else>
-          <dl class="hostage-titles">
-            <div class="hostage-title">
-              <dt>本人のdis称号</dt>
-              <dd>{{ titleName(team?.selfDisTitleId) }}</dd>
-            </div>
-            <div class="hostage-title">
-              <dt>仲間のteam dis称号</dt>
-              <dd>{{ titleName(team?.teamDisTitleId) }}</dd>
-            </div>
-          </dl>
-        </template>
+      <div v-if="isEditingHostage" class="mt-3 grid gap-3">
+        <HostageTitleFields
+          v-model:self-dis-title-id="editSelfDisTitleId"
+          v-model:team-dis-title-id="editTeamDisTitleId"
+        />
+        <p v-if="hostageErrorMessage" class="text-sm text-red-600">{{ hostageErrorMessage }}</p>
+        <div class="flex gap-2">
+          <button class="rounded border px-3 py-1.5 text-sm font-bold" @click="saveHostage">
+            保存
+          </button>
+          <button class="rounded border px-3 py-1.5 text-sm" @click="isEditingHostage = false">
+            キャンセル
+          </button>
+        </div>
+      </div>
+      <!-- エミュレータでは期限切れ判定が自動で動かないので、開発用に小さく出す -->
+      <div v-if="canRunOverdueCheck" class="mt-2 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          class="flex items-center gap-1 px-2 py-0.5 text-xs"
+          :disabled="isRunningOverdueCheck"
+          @click="runOverdueCheck"
+        >
+          <Clock :size="12" aria-hidden="true" />
+          {{ isRunningOverdueCheck ? '判定中…' : '期限切れを判定（開発用）' }}
+        </button>
+        <p v-if="overdueCheckError" role="alert" class="text-xs font-bold text-red-600">
+          {{ overdueCheckError }}
+        </p>
       </div>
     </section>
     <section v-if="team && !loadError" class="task-panel progress-panel">
@@ -599,7 +679,6 @@ async function onComplete(task: Task & { id: string }) {
                     <input
                       v-model="editDueAt"
                       type="datetime-local"
-                      step="0.001"
                       required
                       class="rounded border px-3 py-2"
                       :disabled="!!busyTaskId"
@@ -609,7 +688,28 @@ async function onComplete(task: Task & { id: string }) {
                 <div v-else class="min-w-0 basis-full break-words">
                   <div class="task-header">
                     <p class="task-name flex items-start gap-2 font-bold">
-                      <span class="task-check" aria-hidden="true">
+                      <!-- 本人のタスクはチェックボックスで完了・未完了を切り替える（Firestoreルールでも本人のみに制限） -->
+                      <button
+                        v-if="task.ownerId === currentUser?.uid"
+                        type="button"
+                        role="checkbox"
+                        class="task-check is-toggle"
+                        :aria-checked="task.status === 'done'"
+                        :aria-label="task.status === 'done' ? '未完了に戻す' : '完了にする'"
+                        :title="task.status === 'done' ? '未完了に戻す' : '完了にする'"
+                        :disabled="!!busyTaskId"
+                        @click="onComplete(task)"
+                      >
+                        <Check
+                          :size="16"
+                          :stroke-width="3"
+                          class="check-mark"
+                          :class="{ 'is-checked': task.status === 'done' }"
+                          aria-hidden="true"
+                        />
+                      </button>
+                      <!-- 仲間のタスクは状態を見せるだけ -->
+                      <span v-else class="task-check" aria-hidden="true">
                         <Check v-if="task.status === 'done'" :size="16" :stroke-width="3" />
                       </span>
                       <span class="min-w-0" :class="{ 'line-through': task.status === 'done' }">
@@ -625,7 +725,7 @@ async function onComplete(task: Task & { id: string }) {
                         :disabled="!!busyTaskId"
                         @click="startEditTask(task)"
                       >
-                        <Pencil :size="20" aria-hidden="true" />
+                        <Pencil :size="16" aria-hidden="true" />
                       </button>
                       <button
                         type="button"
@@ -635,7 +735,7 @@ async function onComplete(task: Task & { id: string }) {
                         :disabled="!!busyTaskId"
                         @click="onDelete(task)"
                       >
-                        <Trash2 :size="20" aria-hidden="true" />
+                        <Trash2 :size="16" aria-hidden="true" />
                       </button>
                     </div>
                   </div>
@@ -668,8 +768,11 @@ async function onComplete(task: Task & { id: string }) {
                   :task-title="task.title"
                   :is-owner="task.ownerId === currentUser?.uid"
                 />
-                <div v-if="task.ownerId === currentUser?.uid" class="task-actions">
-                  <div v-if="editingTaskId === task.id" class="flex flex-wrap gap-2">
+                <div
+                  v-if="task.ownerId === currentUser?.uid && editingTaskId === task.id"
+                  class="task-actions"
+                >
+                  <div class="flex flex-wrap gap-2">
                     <button type="submit" :form="`edit-task-${task.id}`" :disabled="!!busyTaskId">
                       保存
                     </button>
@@ -677,17 +780,6 @@ async function onComplete(task: Task & { id: string }) {
                       キャンセル
                     </button>
                   </div>
-                  <!-- 完了にできるのは本人のタスクだけ（Firestoreルールでも制限） -->
-                  <button
-                    v-if="editingTaskId !== task.id"
-                    type="button"
-                    class="task-status-action"
-                    @click="onComplete(task)"
-                    :disabled="!!busyTaskId"
-                  >
-                    <Check :size="16" />
-                    {{ task.status === 'done' ? '未完了に戻す' : '完了' }}
-                  </button>
                 </div>
                 <!-- リアクション・コメント。メンバー全員が自分のタスクにも仲間のタスクにも付けられる -->
                 <TaskFeedback
@@ -782,32 +874,70 @@ async function onComplete(task: Task & { id: string }) {
 .heading-icon {
   @apply grid size-12 shrink-0 place-items-center rounded-xl border-2 border-ink bg-primary text-white shadow-sm;
 }
+.invite-chip {
+  @apply flex w-fit items-center gap-1 rounded-full border border-ink/30 bg-white/70 py-0.5 pr-0.5 pl-3 text-xs text-ink/70;
+}
+.task-page .invite-copy {
+  @apply grid size-7 place-items-center rounded-full border-0 bg-transparent p-0 text-ink/70 hover:bg-muted/50 hover:text-ink;
+}
 .deadline-card {
   @apply shrink-0 rounded-2xl border-2 border-ink bg-ink p-4 text-center text-accent shadow-sm;
 }
 .hostage-panel {
-  @apply bg-accent py-4 font-bold;
+  @apply bg-accent px-4 py-3 font-bold;
 }
 .hostage-panel :deep(select) {
   font-weight: 700;
 }
-.hostage-icon {
-  @apply grid size-10 shrink-0 place-items-center rounded-xl bg-ink text-accent;
+.hostage-bar {
+  @apply flex flex-wrap items-center gap-x-3 gap-y-2;
 }
-.hostage-details {
-  @apply mt-4 grid gap-3;
+.hostage-label {
+  @apply flex shrink-0 items-center gap-1.5 rounded-lg bg-ink px-2.5 py-1 font-display text-sm text-accent;
 }
-.hostage-titles {
-  @apply grid gap-3 sm:grid-cols-2;
+.hostage-chips {
+  @apply flex min-w-0 flex-wrap items-center gap-2;
 }
-.hostage-title {
-  @apply min-w-0 rounded-xl border-2 border-ink bg-white/50 px-4 py-3;
+.hostage-chip {
+  @apply flex min-w-0 items-center gap-1.5 rounded-full border-2 border-ink bg-white py-0.5 pr-3 pl-1 text-sm;
 }
-.hostage-title dt {
-  @apply mb-1 text-xs font-normal text-ink/75;
+.hostage-chip dt {
+  @apply shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs font-normal;
 }
-.hostage-title dd {
-  @apply break-words text-sm font-bold;
+.hostage-chip dd {
+  @apply flex min-w-0 items-center gap-1 break-words;
+}
+/* 発動中：黒地に黄色文字へ反転し、炎のマークを点滅させて「今まさに付いている」感を出す */
+.hostage-chip.is-active {
+  @apply bg-ink text-accent;
+  box-shadow: 0 0 0 3px var(--color-on-late);
+}
+.hostage-chip.is-active dt {
+  @apply bg-accent font-bold text-ink;
+}
+.active-mark {
+  @apply shrink-0 animate-pulse text-orange-400; /* 黒地でも見えるよう明るいオレンジにする */
+}
+.hostage-actions {
+  @apply ml-auto flex shrink-0 items-center gap-1.5;
+}
+.overdue-chip {
+  @apply flex items-center gap-1 rounded-full bg-ink px-2.5 py-1 text-xs text-accent;
+}
+.hostage-info {
+  @apply relative;
+}
+.task-page .hostage-icon-button {
+  @apply grid size-8 place-items-center rounded-full p-0;
+}
+/* ⓘの説明：カーソルを合わせたとき・フォーカスしたとき・タップで開いたときに出す */
+.hostage-tooltip {
+  @apply invisible absolute top-full right-0 z-30 mt-2 w-64 max-w-[80vw] rounded-2xl border-2 border-ink bg-white p-3 text-xs leading-relaxed font-normal text-ink opacity-0 shadow-sm transition;
+}
+.hostage-info:hover .hostage-tooltip,
+.hostage-info:focus-within .hostage-tooltip,
+.hostage-tooltip.is-open {
+  @apply visible opacity-100;
 }
 .progress-track {
   @apply h-2 overflow-hidden rounded-full border border-ink bg-canvas;
@@ -866,7 +996,19 @@ async function onComplete(task: Task & { id: string }) {
   @apply bg-ink text-white;
 }
 .task-check {
-  @apply inline-flex size-5 shrink-0 items-center justify-center rounded border-2 border-ink bg-white;
+  @apply inline-flex size-5 shrink-0 items-center justify-center rounded border-2 border-ink bg-white text-ink;
+}
+/* 押せるチェックボックス。小さいと押しにくいので、少し大きくして押せそうな見た目にする */
+.task-item .task-check.is-toggle {
+  @apply size-6 cursor-pointer rounded-md p-0 shadow-sm transition hover:-translate-y-0.5 hover:bg-accent/40 disabled:cursor-not-allowed;
+}
+/* 未完了のときは、カーソルを合わせるとうっすらチェックを見せて「押すと完了」と分かるようにする */
+.check-mark {
+  @apply opacity-0 transition;
+}
+.task-check.is-toggle:hover .check-mark,
+.check-mark.is-checked {
+  @apply opacity-100;
 }
 .is-done .task-check {
   @apply bg-accent text-ink;
@@ -902,14 +1044,11 @@ async function onComplete(task: Task & { id: string }) {
   @apply min-h-11;
 }
 .task-item .task-icon-button {
-  @apply flex size-11 shrink-0 items-center justify-center p-0;
+  @apply flex size-9 shrink-0 items-center justify-center p-0;
 }
 /* リアクション・コメントの吹き出し（TaskReactionToolbar）は、カーソルを合わせたとき・フォーカスしたときに出す */
 .task-item:hover :deep(.reaction-toolbar),
 .task-item:focus-within :deep(.reaction-toolbar) {
   @apply visible opacity-100;
-}
-.task-status-action {
-  @apply ml-auto flex w-36 shrink-0 items-center justify-center gap-1 whitespace-nowrap;
 }
 </style>
