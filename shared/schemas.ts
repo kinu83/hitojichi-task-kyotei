@@ -66,6 +66,25 @@ export const proofSchema = z.object({
 })
 export type Proof = z.infer<typeof proofSchema>
 
+/** teams/{teamId}/tasks/{taskId}/reactions/{uid}_{type}（1人1種類につき1件。IDで重複を防ぐ） */
+export const reactionTypeSchema = z.enum(['cheer', 'great', 'doubt', 'hurry'])
+export type ReactionType = z.infer<typeof reactionTypeSchema>
+export const reactionSchema = z.object({
+  userId: z.string().min(1), // リアクションした人
+  type: reactionTypeSchema,
+  createdAt: z.date(),
+})
+export type Reaction = z.infer<typeof reactionSchema>
+
+/** teams/{teamId}/tasks/{taskId}/comments/{commentId}（編集は不可、削除のみ） */
+export const MAX_COMMENT_LENGTH = 200
+export const commentSchema = z.object({
+  authorId: z.string().min(1),
+  text: z.string().trim().min(1).max(MAX_COMMENT_LENGTH),
+  createdAt: z.date(),
+})
+export type Comment = z.infer<typeof commentSchema>
+
 /** titles/{titleId}（称号マスタ） */
 export const titleKindSchema = z.enum(['achievement', 'self', 'team'])
 export const titleSchema = z.object({
@@ -107,6 +126,8 @@ export const createProofInput = z.object({
   note: z.string().trim().max(MAX_PROOF_NOTE_LENGTH).optional(),
 })
 export type CreateProofInput = z.infer<typeof createProofInput>
+export const createCommentInput = commentSchema.pick({ text: true })
+export type CreateCommentInput = z.infer<typeof createCommentInput>
 export const joinTeamInput = z.object({ inviteCode: z.string().trim().min(1).max(128) })
 export type JoinTeamInput = z.infer<typeof joinTeamInput>
 export type JoinTeamResult = { teamId: string; teamName: string } // 参加後の画面でチーム名を表示する

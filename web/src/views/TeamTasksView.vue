@@ -30,6 +30,7 @@ import { useOverdueCheck } from '@/composables/useOverdueCheck'
 import HostageTitleFields from '@/components/HostageTitleFields.vue'
 import IconTile from '@/components/IconTile.vue'
 import TaskProofs from '@/components/TaskProofs.vue'
+import TaskFeedback from '@/components/TaskFeedback.vue'
 
 const props = defineProps<{ teamId: string }>()
 
@@ -310,6 +311,26 @@ async function onDelete(task: Task & { id: string }) {
   }
 }
 
+// --- リアクション・コメントの吹き出し：PCはカーソルを合わせると出る。スマホはタスクをタップして開く ---
+const toolbarTaskId = ref<string | null>(null)
+
+function onTaskTap(event: PointerEvent, taskId: string) {
+  if (event.pointerType !== 'touch') return
+  // 完了・編集などのボタンを押したときは開かない
+  if ((event.target as HTMLElement).closest('button, a, input, label, form, [role="toolbar"]'))
+    return
+  toolbarTaskId.value = toolbarTaskId.value === taskId ? null : taskId
+}
+
+// 開いているタスクの外側をタップしたら閉じる
+function closeToolbarOnOutside(event: PointerEvent) {
+  if (!toolbarTaskId.value) return
+  const item = (event.target as HTMLElement).closest('.task-item')
+  if (item?.getAttribute('data-task-id') !== toolbarTaskId.value) toolbarTaskId.value = null
+}
+onMounted(() => document.addEventListener('pointerdown', closeToolbarOnOutside))
+onUnmounted(() => document.removeEventListener('pointerdown', closeToolbarOnOutside))
+
 async function onComplete(task: Task & { id: string }) {
   if (busyTaskId.value) return
   taskErrorMessage.value = ''
@@ -548,11 +569,13 @@ async function onComplete(task: Task & { id: string }) {
               <li
                 v-for="task in card.tasks"
                 :key="task.id"
-                class="task-item flex flex-wrap items-center gap-3 rounded-2xl border-2 border-ink p-4 shadow-sm"
+                class="task-item relative flex flex-wrap items-center gap-3 rounded-2xl border-2 border-ink p-4 shadow-sm"
                 :class="{
                   'is-done': task.status === 'done',
                   'is-late': isDisplayOverdue(task) || isCompletedLate(task),
                 }"
+                :data-task-id="task.id"
+                @pointerup="onTaskTap($event, task.id)"
               >
                 <form
                   v-if="editingTaskId === task.id && task.ownerId === currentUser?.uid"
@@ -666,6 +689,15 @@ async function onComplete(task: Task & { id: string }) {
                     {{ task.status === 'done' ? '未完了に戻す' : '完了' }}
                   </button>
                 </div>
+                <!-- リアクション・コメント。メンバー全員が自分のタスクにも仲間のタスクにも付けられる -->
+                <TaskFeedback
+                  v-if="editingTaskId !== task.id"
+                  :team-id="teamId"
+                  :task-id="task.id"
+                  :is-task-owner="task.ownerId === currentUser?.uid"
+                  :toolbar-open="toolbarTaskId === task.id"
+                  :member-name="memberName"
+                />
               </li>
             </ul>
 
@@ -871,6 +903,11 @@ async function onComplete(task: Task & { id: string }) {
 }
 .task-item .task-icon-button {
   @apply flex size-11 shrink-0 items-center justify-center p-0;
+}
+/* リアクション・コメントの吹き出し（TaskReactionToolbar）は、カーソルを合わせたとき・フォーカスしたときに出す */
+.task-item:hover :deep(.reaction-toolbar),
+.task-item:focus-within :deep(.reaction-toolbar) {
+  @apply visible opacity-100;
 }
 .task-status-action {
   @apply ml-auto flex w-36 shrink-0 items-center justify-center gap-1 whitespace-nowrap;

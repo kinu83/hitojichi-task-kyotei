@@ -78,6 +78,12 @@ const aliases = {
   '@/lib/firebase': dataModule('export const db = globalThis.__taskTest.db'),
   // 証明はStorageを使うので、タスク操作の検証では何もしない版に差し替える
   '@/composables/useTaskProofs': dataModule('export const deleteAllTaskProofs = async () => {}'),
+  '@/composables/useTaskReactions': dataModule(
+    'export const deleteAllTaskReactions = async () => {}',
+  ),
+  '@/composables/useTaskComments': dataModule(
+    'export const deleteAllTaskComments = async () => {}',
+  ),
   vuefire: dataModule(`
     export const useCurrentUser = () => globalThis.__taskTest.currentUser;
     export const useDocument = () => globalThis.__taskTest.team;
@@ -233,6 +239,7 @@ try {
     ),
     '@/components/HostageTitleFields.vue': dataModule('export default {render: () => null}'),
     '@/components/TaskProofs.vue': dataModule('export default {render: () => null}'),
+    '@/components/TaskFeedback.vue': dataModule('export default {render: () => null}'),
     'vue-router': dataModule(
       `import { h } from ${JSON.stringify(import.meta.resolve('vue'))}; export const RouterLink = {render() {return h('a', this.$slots.default())}}`,
     ),
