@@ -1,0 +1,113 @@
+[
+  {
+    "id": "achievement-1",
+    "name": "はじめの一歩",
+    "description": "タスクを1件達成",
+    "kind": "achievement",
+    "requiredDoneCount": 1
+  },
+  {
+    "id": "achievement-5",
+    "name": "着実な相棒",
+    "description": "タスクを5件達成",
+    "kind": "achievement",
+    "requiredDoneCount": 5
+  },
+  {
+    "id": "achievement-10",
+    "name": "頼れる完遂者",
+    "description": "タスクを10件達成",
+    "kind": "achievement",
+    "requiredDoneCount": 10
+  },
+  {
+    "id": "deadline-breaker",
+    "name": "締切ブレイカー",
+    "description": "タスクの期限を破った者に贈られる称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["deadline-refugee", "hostage-victim"],
+    "shameLevel": 1
+  },
+  {
+    "id": "tomorrow-me",
+    "name": "明日の自分に丸投げ職人",
+    "description": "「明日やる」を繰り返した者の称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["waiting-partner", "cleanup-crew"],
+    "shameLevel": 2
+  },
+  {
+    "id": "sabori-master",
+    "name": "サボりの達人",
+    "description": "期限切れを重ねた者に贈られる称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["poor-hostage", "cleanup-crew", "hostage-victim"],
+    "shameLevel": 3
+  },
+  {
+    "id": "legendary-deserter",
+    "name": "伝説の敵前逃亡者",
+    "description": "サボりを極めた者だけが得る最悪の称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["abandoned-partner"],
+    "shameLevel": 5
+  },
+  {
+    "id": "excuse-alchemist",
+    "name": "言い訳の錬金術師",
+    "description": "「忙しかった」を材料に、未達成を正当化した者の称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["waiting-partner", "poor-hostage"],
+    "shameLevel": 2
+  },
+  {
+    "id": "zero-progress-hero",
+    "name": "進捗ゼロの勇者",
+    "description": "やる気だけで出発し、タスクを手つかずにした者の称号",
+    "kind": "self",
+    "recommendedTeamTitleIds": ["cleanup-crew", "abandoned-partner"],
+    "shameLevel": 2
+  },
+  {
+    "id": "hostage-victim",
+    "name": "巻き添えの人質",
+    "description": "仲間のサボりで道連れにされた者の称号",
+    "kind": "team",
+    "shameLevel": 1
+  },
+  {
+    "id": "poor-hostage",
+    "name": "哀れな人質",
+    "description": "仲間に何度も見捨てられた者の称号",
+    "kind": "team",
+    "shameLevel": 3
+  },
+  {
+    "id": "deadline-refugee",
+    "name": "締切難民",
+    "description": "仲間が締切を破り、予定の行き場を失った者の称号",
+    "kind": "team",
+    "shameLevel": 1
+  },
+  {
+    "id": "cleanup-crew",
+    "name": "尻拭い担当",
+    "description": "仲間が残した作業を引き受けることになった者の称号",
+    "kind": "team",
+    "shameLevel": 2
+  },
+  {
+    "id": "abandoned-partner",
+    "name": "置き去りの相棒",
+    "description": "仲間が逃亡し、ひとり戦場に取り残された者の称号",
+    "kind": "team",
+    "shameLevel": 5
+  },
+  {
+    "id": "waiting-partner",
+    "name": "待ちぼうけの相棒",
+    "description": "仲間の「もうすぐ終わる」を信じ、待ち続けた者の称号",
+    "kind": "team",
+    "shameLevel": 2
+  }
+]

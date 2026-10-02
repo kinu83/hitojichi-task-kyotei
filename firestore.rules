@@ -22,6 +22,13 @@ service cloud.firestore {
           || data.goalDueDate.matches('^([0-9]{2}([2468][048]|[13579][26]|0[48])|[02468][048]00|[13579][26]00)-02-29$'));
     }
 
+    function validHostageTitles(data) {
+      // 画面を経由しない書き込みでも、本人と巻き添えの称号を取り違えさせない。
+      return data.selfDisTitleId is string && data.teamDisTitleId is string
+        && get(/databases/$(database)/documents/titles/$(data.selfDisTitleId)).data.kind == 'self'
+        && get(/databases/$(database)/documents/titles/$(data.teamDisTitleId)).data.kind == 'team';
+    }
+
     // プロフィール：ログインユーザーなら閲覧可、本人のみ更新可。称号(titleIds)はFunctionsのみ変更可
     // 装備する称号(equippedTitleId)は、外す(null)か獲得済みの称号のみ
     match /users/{uid} {
@@ -46,12 +53,15 @@ service cloud.firestore {
         && !request.resource.data.diff(resource.data).affectedKeys().hasAny(['createdBy', 'memberIds'])
         && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['goal', 'goalDueDate'])
           || validTeamGoal(request.resource.data))
+        && (!request.resource.data.diff(resource.data).affectedKeys().hasAny(['selfDisTitleId', 'teamDisTitleId'])
+          || validHostageTitles(request.resource.data))
         && (request.auth.uid == resource.data.createdBy
           || !request.resource.data.diff(resource.data).affectedKeys()
             .hasAny(['selfDisTitleId', 'teamDisTitleId']));
       allow create: if signedIn() && request.resource.data.memberIds == [request.auth.uid]
         && request.resource.data.createdBy == request.auth.uid
-        && validTeamGoal(request.resource.data);
+        && validTeamGoal(request.resource.data)
+        && validHostageTitles(request.resource.data);
 
       // タスク：閲覧はチームメンバー全員、追加・更新・削除は本人（ownerId）のみ
       match /tasks/{taskId} {
